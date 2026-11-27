@@ -72,7 +72,7 @@ public final class Main {
         String peer = required(options, "--peer");
         int peerPort = Integer.parseInt(required(options, "--peer-port"));
         int interval = Integer.parseInt(options.getOrDefault("--interval", "10"));
-        Path logPath = Path.of(options.getOrDefault("--log", "logs/sync-" + localPort + ".log"));
+        Path logPath = Path.of(options.getOrDefault("--log", "sync.log"));
         AppLogger log = new AppLogger(logPath, null);
         SyncController controller =
                 new SyncController(root, localPort, peer, peerPort, interval, log);

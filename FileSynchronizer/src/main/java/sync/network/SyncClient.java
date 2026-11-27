@@ -26,6 +26,20 @@ public final class SyncClient implements AutoCloseable {
         this.log = log;
     }
 
+    public void probe(String host, int port) throws IOException {
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress(host, port), 3000);
+            socket.setSoTimeout(3000);
+            DataOutputStream out = new DataOutputStream(socket.getOutputStream());
+            DataInputStream in = new DataInputStream(socket.getInputStream());
+            out.writeUTF(Protocol.PING);
+            out.flush();
+            if (!Protocol.PING.equals(in.readUTF())) {
+                throw new IOException("Неизвестный ответ партнёра");
+            }
+        }
+    }
+
     public String synchronize(String host, int port) throws IOException {
         DirectorySnapshot local = FileScanner.scan(root, log.getFile());
         try (Socket socket = new Socket()) {
@@ -97,6 +111,7 @@ public final class SyncClient implements AutoCloseable {
                 }
                 out.writeByte(Protocol.END);
                 out.flush();
+                FileScanner.scan(root, log.getFile());
                 String summary =
                         "Завершено: получено "
                                 + downloaded

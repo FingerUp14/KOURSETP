@@ -13,6 +13,7 @@ import java.io.IOException;
 /** Length-delimited protocol; Java object deserialization is deliberately not used. */
 final class Protocol {
     static final String MAGIC = "FILE-SYNC-1";
+    static final String PING = "FILE-SYNC-PING-1";
     static final int GET = 1;
     static final int PUT = 2;
     static final int END = 3;

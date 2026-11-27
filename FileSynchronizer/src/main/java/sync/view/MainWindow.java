@@ -33,10 +33,10 @@ public final class MainWindow extends JFrame {
     private final JTextArea journal = new JTextArea();
     private final JLabel status = new JLabel("Укажите параметры и запустите синхронизацию");
     private final JButton browse = new JButton("Обзор...");
-    private final JButton start = new JButton("Запустить");
-    private final JButton synchronize = new JButton("Синхронизировать сейчас");
+    private final JButton start = new JButton("Подключиться");
+    private final JButton synchronize = new JButton("Синхронизировать");
     private final JButton stop = new JButton("Остановить");
-    private SyncController controller;
+    private volatile SyncController controller;
     private AppLogger log;
 
     public MainWindow() {
@@ -126,7 +126,7 @@ public final class MainWindow extends JFrame {
                 throw new IllegalArgumentException("Выберите каталог");
             }
             int local = Integer.parseInt(localPort.getText().trim());
-            Path logPath = Path.of("logs", "sync-" + local + ".log");
+            Path logPath = Path.of("sync.log");
             log =
                     new AppLogger(
                             logPath,
@@ -136,6 +136,11 @@ public final class MainWindow extends JFrame {
                                                 journal.append(line + "\n");
                                                 journal.setCaretPosition(
                                                         journal.getDocument().getLength());
+                                                if (line.contains("Завершено:")) {
+                                                    status.setText(
+                                                            line.substring(
+                                                                    line.indexOf("Завершено:")));
+                                                }
                                             }));
             SyncController next =
                     new SyncController(
@@ -145,10 +150,65 @@ public final class MainWindow extends JFrame {
                             Integer.parseInt(remotePort.getText().trim()),
                             Integer.parseInt(interval.getText().trim()),
                             log);
-            next.start(true);
+            next.start(false);
             controller = next;
             setRunning(true);
-            status.setText("Работает автоматически. Журнал: " + log.getFile());
+            synchronize.setEnabled(false);
+            status.setText("Ожидание подключения к партнёру...");
+            Thread connector =
+                    new Thread(
+                            () -> {
+                                int failures = 0;
+                                while (!Thread.currentThread().isInterrupted()) {
+                                    try {
+                                        next.connect();
+                                        SwingUtilities.invokeLater(
+                                                () -> {
+                                                    if (controller == next) {
+                                                        synchronize.setEnabled(true);
+                                                        status.setText(
+                                                                "Подключено. Журнал: "
+                                                                        + log.getFile());
+                                                    }
+                                                });
+                                        return;
+                                    } catch (Exception e) {
+                                        if (controller != next) {
+                                            return;
+                                        }
+                                        log.log(
+                                                "Ошибка подключения: "
+                                                        + e.getMessage()
+                                                        + "; повторная попытка");
+                                        if (++failures == 3) {
+                                            SwingUtilities.invokeLater(
+                                                    () -> {
+                                                        if (controller == next
+                                                                && !synchronize.isEnabled()) {
+                                                            JOptionPane.showMessageDialog(
+                                                                    this,
+                                                                    "Партнёр недоступен: "
+                                                                            + e.getMessage()
+                                                                            + ". Попытки"
+                                                                            + " подключения"
+                                                                            + " продолжаются.",
+                                                                    "Ошибка подключения",
+                                                                    JOptionPane.ERROR_MESSAGE);
+                                                        }
+                                                    });
+                                        }
+                                        try {
+                                            Thread.sleep(2000);
+                                        } catch (InterruptedException interrupted) {
+                                            Thread.currentThread().interrupt();
+                                            return;
+                                        }
+                                    }
+                                }
+                            },
+                            "connect-peer");
+            connector.setDaemon(true);
+            connector.start();
         } catch (Exception e) {
             showError(e);
         }
@@ -164,11 +224,19 @@ public final class MainWindow extends JFrame {
                         () -> {
                             try {
                                 String result = current.synchronizeNow();
+                                current.startAutomatic();
                                 SwingUtilities.invokeLater(() -> status.setText(result));
                             } catch (Exception e) {
                                 log.log("Ошибка синхронизации: " + e.getMessage());
                                 SwingUtilities.invokeLater(
-                                        () -> status.setText("Ошибка: " + e.getMessage()));
+                                        () -> {
+                                            status.setText("Ошибка: " + e.getMessage());
+                                            JOptionPane.showMessageDialog(
+                                                    this,
+                                                    e.getMessage(),
+                                                    "Ошибка синхронизации",
+                                                    JOptionPane.ERROR_MESSAGE);
+                                        });
                             }
                         },
                         "manual-sync");

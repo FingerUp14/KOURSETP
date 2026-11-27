@@ -3,6 +3,7 @@ package sync.controller;
 import sync.network.SyncClient;
 import sync.network.SyncServer;
 import sync.util.AppLogger;
+import sync.util.SnapshotStore;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -58,32 +59,53 @@ public final class SyncController implements AutoCloseable {
         if (!Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS) || !Files.isWritable(root)) {
             throw new IOException("Каталог не существует или недоступен для записи: " + root);
         }
+        int savedCount = SnapshotStore.load(root).size();
+        log.log("Загружено записей сохранённого состояния: " + savedCount);
         server = new SyncServer(root, localPort, log);
         client = new SyncClient(root, log);
         running = true;
         server.start();
         if (automatic) {
-            scheduler =
-                    Executors.newSingleThreadScheduledExecutor(
-                            task -> {
-                                Thread thread = new Thread(task, "sync-scheduler");
-                                thread.setDaemon(true);
-                                return thread;
-                            });
-            scheduler.scheduleWithFixedDelay(
-                    () -> {
-                        try {
-                            synchronizeNow();
-                        } catch (IOException | RuntimeException e) {
-                            if (running) {
-                                log.log("Ошибка синхронизации: " + e.getMessage());
-                            }
-                        }
-                    },
-                    0,
-                    intervalSeconds,
-                    TimeUnit.SECONDS);
+            scheduleAutomatic(0);
         }
+    }
+
+    public void connect() throws IOException {
+        if (!running) {
+            throw new IOException("Сервер не запущен");
+        }
+        client.probe(host, remotePort);
+        log.log("Подключение к " + host + ":" + remotePort + " установлено");
+    }
+
+    public synchronized void startAutomatic() {
+        scheduleAutomatic(intervalSeconds);
+    }
+
+    private synchronized void scheduleAutomatic(int initialDelay) {
+        if (!running || scheduler != null) {
+            return;
+        }
+        scheduler =
+                Executors.newSingleThreadScheduledExecutor(
+                        task -> {
+                            Thread thread = new Thread(task, "sync-scheduler");
+                            thread.setDaemon(true);
+                            return thread;
+                        });
+        scheduler.scheduleWithFixedDelay(
+                () -> {
+                    try {
+                        synchronizeNow();
+                    } catch (IOException | RuntimeException e) {
+                        if (running) {
+                            log.log("Ошибка синхронизации: " + e.getMessage());
+                        }
+                    }
+                },
+                initialDelay,
+                intervalSeconds,
+                TimeUnit.SECONDS);
     }
 
     public String synchronizeNow() throws IOException {

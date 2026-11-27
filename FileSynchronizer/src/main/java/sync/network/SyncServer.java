@@ -73,7 +73,13 @@ public final class SyncServer implements AutoCloseable {
                 DataOutputStream out =
                         new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()))) {
             socket.setSoTimeout(30000);
-            if (!Protocol.MAGIC.equals(in.readUTF())) {
+            String magic = in.readUTF();
+            if (Protocol.PING.equals(magic)) {
+                out.writeUTF(Protocol.PING);
+                out.flush();
+                return;
+            }
+            if (!Protocol.MAGIC.equals(magic)) {
                 throw new IOException("Unknown protocol");
             }
             DirectorySnapshot remote = Protocol.readSnapshot(in);
@@ -122,6 +128,7 @@ public final class SyncServer implements AutoCloseable {
                     throw new IOException("Unknown command: " + command);
                 }
             }
+            FileScanner.scan(root, log.getFile());
             log.log("Сеанс клиента " + peer + " завершён");
         } catch (IOException | RuntimeException e) {
             log.log("Ошибка клиента " + peer + ": " + e.getMessage());
@@ -137,6 +144,11 @@ public final class SyncServer implements AutoCloseable {
             connection.close();
         }
         workers.shutdownNow();
+        try {
+            workers.awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
         log.log("Сервер остановлен");
     }
 }

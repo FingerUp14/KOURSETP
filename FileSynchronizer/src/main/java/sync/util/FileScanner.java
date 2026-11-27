@@ -57,6 +57,7 @@ public final class FileScanner {
                         return FileVisitResult.CONTINUE;
                     }
                 });
+        SnapshotStore.save(root, snapshot);
         return snapshot;
     }
 }
