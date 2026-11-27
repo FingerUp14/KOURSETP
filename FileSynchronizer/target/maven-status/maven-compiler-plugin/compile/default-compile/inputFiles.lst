@@ -1,0 +1,12 @@
+/Users/vladislav/Documents/JAVA/KURSOVAYA/FileSynchronizer/src/main/java/sync/network/SyncClient.java
+/Users/vladislav/Documents/JAVA/KURSOVAYA/FileSynchronizer/src/main/java/sync/util/FileScanner.java
+/Users/vladislav/Documents/JAVA/KURSOVAYA/FileSynchronizer/src/main/java/sync/util/Logger.java
+/Users/vladislav/Documents/JAVA/KURSOVAYA/FileSynchronizer/src/main/java/sync/Main.java
+/Users/vladislav/Documents/JAVA/KURSOVAYA/FileSynchronizer/src/main/java/sync/view/MainWindow.java
+/Users/vladislav/Documents/JAVA/KURSOVAYA/FileSynchronizer/src/main/java/sync/controller/SyncController.java
+/Users/vladislav/Documents/JAVA/KURSOVAYA/FileSynchronizer/src/main/java/sync/model/DirectorySnapshot.java
+/Users/vladislav/Documents/JAVA/KURSOVAYA/FileSynchronizer/src/main/java/sync/network/SyncServer.java
+/Users/vladislav/Documents/JAVA/KURSOVAYA/FileSynchronizer/src/main/java/sync/network/FileTransfer.java
+/Users/vladislav/Documents/JAVA/KURSOVAYA/FileSynchronizer/src/main/java/sync/model/FileInfo.java
+/Users/vladislav/Documents/JAVA/KURSOVAYA/FileSynchronizer/src/main/java/sync/util/AppLogger.java
+/Users/vladislav/Documents/JAVA/KURSOVAYA/FileSynchronizer/src/main/java/sync/util/HashUtil.java
