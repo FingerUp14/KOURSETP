@@ -1,80 +1,142 @@
 package sync.network;
 
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
+import sync.model.DirectorySnapshot;
+import sync.model.FileInfo;
+import sync.model.SyncPlan;
+import sync.util.AppLogger;
+import sync.util.FileScanner;
+
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketException;
+import java.nio.file.Path;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
-import sync.model.DirectorySnapshot;
-import sync.util.AppLogger;
+/** Accepts incoming synchronization sessions until closed. */
+public final class SyncServer implements AutoCloseable {
+    private final Path root;
+    private final AppLogger log;
+    private final ServerSocket serverSocket;
+    private final ExecutorService workers = Executors.newFixedThreadPool(4);
+    private final Set<Socket> connections = ConcurrentHashMap.newKeySet();
+    private final Thread acceptThread;
 
-public class SyncServer extends Thread {
-
-    private final int port;
-    private DirectorySnapshot localSnapshot;
-
-    public SyncServer(int port) {
-        this.port = port;
+    public SyncServer(Path root, int port, AppLogger log) throws IOException {
+        this.root = root;
+        this.log = log;
+        this.serverSocket = new ServerSocket(port);
+        this.acceptThread = new Thread(this::acceptLoop, "sync-accept");
+        this.acceptThread.setDaemon(true);
     }
 
-    public void setLocalSnapshot(DirectorySnapshot snapshot) {
-        this.localSnapshot = snapshot;
+    public int getPort() {
+        return serverSocket.getLocalPort();
+    }
+
+    public void start() {
+        log.log("Сервер запущен, порт " + getPort() + ", каталог " + root);
+        acceptThread.start();
+    }
+
+    private void acceptLoop() {
+        while (!serverSocket.isClosed()) {
+            try {
+                Socket socket = serverSocket.accept();
+                connections.add(socket);
+                workers.execute(() -> handle(socket));
+            } catch (SocketException e) {
+                if (!serverSocket.isClosed()) {
+                    log.log("Ошибка сервера: " + e.getMessage());
+                }
+            } catch (IOException | RuntimeException e) {
+                if (!serverSocket.isClosed()) {
+                    log.log("Ошибка сервера: " + e.getMessage());
+                }
+            }
+        }
+    }
+
+    private void handle(Socket socket) {
+        String peer = socket.getRemoteSocketAddress().toString();
+        log.log("Подключился клиент " + peer);
+        try (socket;
+                DataInputStream in =
+                        new DataInputStream(new BufferedInputStream(socket.getInputStream()));
+                DataOutputStream out =
+                        new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()))) {
+            socket.setSoTimeout(30000);
+            if (!Protocol.MAGIC.equals(in.readUTF())) {
+                throw new IOException("Unknown protocol");
+            }
+            DirectorySnapshot remote = Protocol.readSnapshot(in);
+            DirectorySnapshot local = FileScanner.scan(root, log.getFile());
+            Protocol.writeSnapshot(out, local);
+            SyncPlan plan = SyncPlan.compare(local, remote);
+            Protocol.logConflicts(plan, log, peer);
+            while (true) {
+                int command = in.readUnsignedByte();
+                if (command == Protocol.END) {
+                    break;
+                }
+                String path = in.readUTF();
+                if (command == Protocol.GET) {
+                    FileInfo file = local.find(path);
+                    if (file == null || remote.find(path) != null) {
+                        throw new IOException("Unexpected download: " + path);
+                    }
+                    boolean sent = FileTransfer.send(out, root, file);
+                    log.log(
+                            (sent ? "Отправлен клиенту " : "Не отправлен клиенту ")
+                                    + peer
+                                    + ": "
+                                    + path);
+                } else if (command == Protocol.PUT) {
+                    FileInfo file = remote.find(path);
+                    if (file == null || local.find(path) != null) {
+                        throw new IOException("Unexpected upload: " + path);
+                    }
+                    out.writeBoolean(true);
+                    out.flush();
+                    FileTransfer.Result result = FileTransfer.receive(in, root, file);
+                    log.log("Получение от " + peer + ": " + path + " — " + result);
+                    if (result == FileTransfer.Result.CONFLICT) {
+                        log.log(
+                                "КОНФЛИКТ с "
+                                        + peer
+                                        + ": "
+                                        + path
+                                        + " появился во время передачи; существующая версия"
+                                        + " сохранена");
+                    }
+                    out.writeUTF(result.name());
+                    out.flush();
+                } else {
+                    throw new IOException("Unknown command: " + command);
+                }
+            }
+            log.log("Сеанс клиента " + peer + " завершён");
+        } catch (IOException | RuntimeException e) {
+            log.log("Ошибка клиента " + peer + ": " + e.getMessage());
+        } finally {
+            connections.remove(socket);
+        }
     }
 
     @Override
-    public void run() {
-
-        try (ServerSocket serverSocket = new ServerSocket(port)) {
-
-            AppLogger.log("Server started on port " + port);
-
-            while (true) {
-
-                Socket socket = serverSocket.accept();
-
-                AppLogger.log("Client connected");
-
-                try {
-
-                    ObjectOutputStream out =
-                            new ObjectOutputStream(socket.getOutputStream());
-
-                    out.flush();
-
-                    ObjectInputStream in =
-                            new ObjectInputStream(socket.getInputStream());
-
-                    DirectorySnapshot remote =
-                            (DirectorySnapshot) in.readObject();
-
-                    AppLogger.log(
-                            "Received snapshot (" +
-                                    remote.size() +
-                                    " files)"
-                    );
-
-                    out.writeObject(localSnapshot);
-
-                    out.flush();
-
-                } catch (Exception e) {
-
-                    AppLogger.log(e.getMessage());
-
-                } finally {
-
-                    socket.close();
-
-                }
-
-            }
-
-        } catch (Exception e) {
-
-            AppLogger.log("Server error: " + e.getMessage());
-
+    public void close() throws IOException {
+        serverSocket.close();
+        for (Socket connection : connections) {
+            connection.close();
         }
-
+        workers.shutdownNow();
+        log.log("Сервер остановлен");
     }
-
 }

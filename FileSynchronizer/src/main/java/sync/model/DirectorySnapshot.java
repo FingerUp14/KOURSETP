@@ -1,22 +1,23 @@
 package sync.model;
 
-import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 
-public class DirectorySnapshot implements Serializable {
-
-    private static final long serialVersionUID = 1L;
-
-    private final List<FileInfo> files = new ArrayList<>();
+/** A deterministic index of files observed in a directory. */
+public final class DirectorySnapshot {
+    private final Map<String, FileInfo> files = new TreeMap<>();
 
     public void addFile(FileInfo file) {
-        files.add(file);
+        if (files.putIfAbsent(file.getRelativePath(), file) != null) {
+            throw new IllegalArgumentException("Duplicate path: " + file.getRelativePath());
+        }
     }
 
     public List<FileInfo> getFiles() {
-        return Collections.unmodifiableList(files);
+        return Collections.unmodifiableList(new ArrayList<>(files.values()));
     }
 
     public int size() {
@@ -24,17 +25,6 @@ public class DirectorySnapshot implements Serializable {
     }
 
     public FileInfo find(String relativePath) {
-
-        for (FileInfo file : files) {
-
-            if (file.getRelativePath().equals(relativePath)) {
-                return file;
-            }
-
-        }
-
-        return null;
-
+        return files.get(relativePath);
     }
-
 }

@@ -1,14 +1,18 @@
 package sync.view;
 
+import sync.controller.SyncController;
+import sync.util.AppLogger;
+
 import java.awt.BorderLayout;
-import java.awt.Dimension;
 import java.awt.FlowLayout;
-import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
-import java.io.File;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
+import java.nio.file.Path;
 
+import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
@@ -18,243 +22,187 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
-import javax.swing.border.EmptyBorder;
+import javax.swing.SwingUtilities;
 
-import sync.controller.SyncController;
-import sync.model.DirectorySnapshot;
-import sync.util.AppLogger;
-
-public class MainWindow extends JFrame {
-
+public final class MainWindow extends JFrame {
+    private final JTextField directory = new JTextField();
+    private final JTextField host = new JTextField("127.0.0.1");
+    private final JTextField localPort = new JTextField("5000");
+    private final JTextField remotePort = new JTextField("5001");
+    private final JTextField interval = new JTextField("10");
+    private final JTextArea journal = new JTextArea();
+    private final JLabel status = new JLabel("Укажите параметры и запустите синхронизацию");
+    private final JButton browse = new JButton("Обзор...");
+    private final JButton start = new JButton("Запустить");
+    private final JButton synchronize = new JButton("Синхронизировать сейчас");
+    private final JButton stop = new JButton("Остановить");
     private SyncController controller;
-
-    private JTextField directoryField;
-    private JTextField ipField;
-    private JTextField remotePortField;
-    private JTextField localPortField;
-
-    private JButton browseButton;
-    private JButton connectButton;
-    private JButton syncButton;
-
-    private JTextArea logArea;
-
-    private JLabel statusLabel;
+    private AppLogger log;
 
     public MainWindow() {
-
-        setTitle("File Synchronizer");
-
-        setSize(850, 600);
-
+        super("Синхронизация файлов");
+        setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
+        setSize(850, 570);
+        setMinimumSize(new java.awt.Dimension(680, 470));
         setLocationRelativeTo(null);
-
-        setDefaultCloseOperation(EXIT_ON_CLOSE);
-
-        createInterface();
-
-        registerListeners();
-
-        AppLogger.setLogArea(logArea);
-
-        AppLogger.log("Application started.");
-
+        buildInterface();
+        setRunning(false);
+        browse.addActionListener(event -> chooseDirectory());
+        start.addActionListener(event -> start());
+        synchronize.addActionListener(event -> synchronize());
+        stop.addActionListener(event -> stop());
+        addWindowListener(
+                new WindowAdapter() {
+                    @Override
+                    public void windowClosing(WindowEvent event) {
+                        stop();
+                        dispose();
+                    }
+                });
     }
 
-    private void createInterface() {
-
-        JPanel root = new JPanel(new BorderLayout(10, 10));
-
-        root.setBorder(new EmptyBorder(10, 10, 10, 10));
-
-        add(root);
-
-        JPanel top = new JPanel(new GridBagLayout());
-
-        GridBagConstraints c = new GridBagConstraints();
-
-        c.insets = new Insets(5, 5, 5, 5);
-
-        c.fill = GridBagConstraints.HORIZONTAL;
-
-        directoryField = new JTextField();
-
-        browseButton = new JButton("Browse");
-
-        ipField = new JTextField("127.0.0.1");
-
-        remotePortField = new JTextField("5001");
-
-        localPortField = new JTextField("5000");
-
-        addRow(top, c, 0, "Folder:", directoryField, browseButton);
-
-        addRow(top, c, 1, "IP:", ipField, null);
-
-        addRow(top, c, 2, "Remote Port:", remotePortField, null);
-
-        addRow(top, c, 3, "Local Port:", localPortField, null);
-
+    private void buildInterface() {
+        JPanel root = new JPanel(new BorderLayout(8, 8));
+        root.setBorder(BorderFactory.createEmptyBorder(14, 14, 14, 14));
+        setContentPane(root);
+        JPanel form = new JPanel(new GridBagLayout());
+        GridBagConstraints constraints = new GridBagConstraints();
+        constraints.insets = new Insets(4, 4, 4, 4);
+        constraints.fill = GridBagConstraints.HORIZONTAL;
+        addRow(form, constraints, 0, "Каталог:", directory, browse);
+        addRow(form, constraints, 1, "Адрес второго компьютера:", host, null);
+        addRow(form, constraints, 2, "Локальный порт:", localPort, null);
+        addRow(form, constraints, 3, "Порт второго компьютера:", remotePort, null);
+        addRow(form, constraints, 4, "Интервал, секунд:", interval, null);
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT));
-
-        connectButton = new JButton("Connect");
-
-        syncButton = new JButton("Synchronize");
-
-        connectButton.setEnabled(false);
-
-        Dimension buttonSize = new Dimension(150, 35);
-
-        connectButton.setPreferredSize(buttonSize);
-
-        syncButton.setPreferredSize(buttonSize);
-
-        buttons.add(connectButton);
-
-        buttons.add(syncButton);
-
-        logArea = new JTextArea();
-
-        logArea.setEditable(false);
-
-        logArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 13));
-
-        JScrollPane scrollPane = new JScrollPane(logArea);
-
-        statusLabel = new JLabel("Ready");
-
-        statusLabel.setBorder(new EmptyBorder(5, 5, 5, 5));
-
+        buttons.add(start);
+        buttons.add(synchronize);
+        buttons.add(stop);
+        JPanel top = new JPanel(new BorderLayout());
+        top.add(form, BorderLayout.CENTER);
+        top.add(buttons, BorderLayout.SOUTH);
+        journal.setEditable(false);
+        journal.setLineWrap(true);
+        journal.setWrapStyleWord(true);
+        JScrollPane scroll = new JScrollPane(journal);
+        scroll.setBorder(BorderFactory.createTitledBorder("Журнал работы"));
         root.add(top, BorderLayout.NORTH);
-
-        root.add(buttons, BorderLayout.CENTER);
-
-        root.add(scrollPane, BorderLayout.SOUTH);
-
-        add(statusLabel, BorderLayout.SOUTH);
-
+        root.add(scroll, BorderLayout.CENTER);
+        root.add(status, BorderLayout.SOUTH);
     }
 
     private void addRow(
             JPanel panel,
             GridBagConstraints c,
             int row,
-            String label,
+            String title,
             JTextField field,
             JButton button) {
-
-        c.gridx = 0;
         c.gridy = row;
+        c.gridx = 0;
         c.weightx = 0;
-
-        panel.add(new JLabel(label), c);
-
+        panel.add(new JLabel(title), c);
         c.gridx = 1;
         c.weightx = 1;
-
         panel.add(field, c);
-
         if (button != null) {
-
             c.gridx = 2;
             c.weightx = 0;
-
             panel.add(button, c);
-
         }
-
-    }
-        private void registerListeners() {
-
-        browseButton.addActionListener(e -> chooseDirectory());
-
-        syncButton.addActionListener(e -> synchronize());
-
     }
 
     private void chooseDirectory() {
-
         JFileChooser chooser = new JFileChooser();
-
         chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-
-            File folder = chooser.getSelectedFile();
-
-            directoryField.setText(folder.getAbsolutePath());
-
-            statusLabel.setText("Folder selected");
-
-            AppLogger.log("Folder selected: " + folder.getAbsolutePath());
-
+            directory.setText(chooser.getSelectedFile().getAbsolutePath());
         }
+    }
 
+    private void start() {
+        try {
+            if (directory.getText().isBlank()) {
+                throw new IllegalArgumentException("Выберите каталог");
+            }
+            int local = Integer.parseInt(localPort.getText().trim());
+            Path logPath = Path.of("logs", "sync-" + local + ".log");
+            log =
+                    new AppLogger(
+                            logPath,
+                            line ->
+                                    SwingUtilities.invokeLater(
+                                            () -> {
+                                                journal.append(line + "\n");
+                                                journal.setCaretPosition(
+                                                        journal.getDocument().getLength());
+                                            }));
+            SyncController next =
+                    new SyncController(
+                            Path.of(directory.getText().trim()),
+                            local,
+                            host.getText(),
+                            Integer.parseInt(remotePort.getText().trim()),
+                            Integer.parseInt(interval.getText().trim()),
+                            log);
+            next.start(true);
+            controller = next;
+            setRunning(true);
+            status.setText("Работает автоматически. Журнал: " + log.getFile());
+        } catch (Exception e) {
+            showError(e);
+        }
     }
 
     private void synchronize() {
-
-        if (directoryField.getText().isBlank()) {
-
-            JOptionPane.showMessageDialog(
-                    this,
-                    "Please select a folder."
-            );
-
+        SyncController current = controller;
+        if (current == null) {
             return;
-
         }
-
-        try {
-
-            if (controller == null) {
-
-                int localPort =
-                        Integer.parseInt(localPortField.getText());
-
-                controller = new SyncController(localPort);
-
-            }
-
-            statusLabel.setText("Synchronizing...");
-
-            DirectorySnapshot remoteSnapshot =
-                    controller.synchronize(
-                            new File(directoryField.getText()),
-                            ipField.getText(),
-                            Integer.parseInt(remotePortField.getText())
-                    );
-
-            if (remoteSnapshot != null) {
-
-                AppLogger.log(
-                        "Remote snapshot received. Files: "
-                                + remoteSnapshot.size()
-                );
-
-                statusLabel.setText("Synchronization completed");
-
-            } else {
-
-                statusLabel.setText("Synchronization failed");
-
-            }
-
-        } catch (Exception e) {
-
-            statusLabel.setText("Error");
-
-            AppLogger.log("Synchronization error: " + e.getMessage());
-
-            JOptionPane.showMessageDialog(
-                    this,
-                    e.getMessage(),
-                    "Error",
-                    JOptionPane.ERROR_MESSAGE
-            );
-
-        }
-
+        Thread worker =
+                new Thread(
+                        () -> {
+                            try {
+                                String result = current.synchronizeNow();
+                                SwingUtilities.invokeLater(() -> status.setText(result));
+                            } catch (Exception e) {
+                                log.log("Ошибка синхронизации: " + e.getMessage());
+                                SwingUtilities.invokeLater(
+                                        () -> status.setText("Ошибка: " + e.getMessage()));
+                            }
+                        },
+                        "manual-sync");
+        worker.setDaemon(true);
+        worker.start();
     }
 
+    private void stop() {
+        if (controller != null) {
+            try {
+                controller.close();
+            } catch (Exception e) {
+                showError(e);
+            }
+            controller = null;
+        }
+        setRunning(false);
+        status.setText("Остановлено");
+    }
+
+    private void setRunning(boolean running) {
+        directory.setEnabled(!running);
+        host.setEnabled(!running);
+        localPort.setEnabled(!running);
+        remotePort.setEnabled(!running);
+        interval.setEnabled(!running);
+        browse.setEnabled(!running);
+        start.setEnabled(!running);
+        synchronize.setEnabled(running);
+        stop.setEnabled(running);
+    }
+
+    private void showError(Exception e) {
+        status.setText("Ошибка");
+        JOptionPane.showMessageDialog(this, e.getMessage(), "Ошибка", JOptionPane.ERROR_MESSAGE);
+    }
 }

@@ -1,49 +1,54 @@
 package sync.util;
 
-import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.function.Consumer;
 
-import javax.swing.JTextArea;
-
+/** Thread-safe text log shared by the server, client and user interface. */
 public final class AppLogger {
+    private static final DateTimeFormatter FORMAT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private final Path file;
+    private final Consumer<String> listener;
 
-    private static final String LOG_FILE = "sync.log";
-
-    private static JTextArea logArea;
-
-    private AppLogger() {
-    }
-
-    public static void setLogArea(JTextArea area) {
-        logArea = area;
-    }
-
-    public static void log(String message) {
-
-        String line =
-                "[" +
-                LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"))
-                + "] "
-                + message;
-
-        if (logArea != null) {
-            logArea.append(line + "\n");
-            logArea.setCaretPosition(logArea.getDocument().getLength());
+    public AppLogger(Path file, Consumer<String> listener) throws IOException {
+        this.file = file.toAbsolutePath().normalize();
+        this.listener = listener;
+        Files.createDirectories(this.file.getParent());
+        try (var ignored =
+                Files.newBufferedWriter(
+                        this.file,
+                        StandardCharsets.UTF_8,
+                        StandardOpenOption.CREATE,
+                        StandardOpenOption.APPEND)) {
+            // Fail at startup if the log cannot be written.
         }
+    }
 
-        try (FileWriter writer = new FileWriter(LOG_FILE, true)) {
+    public Path getFile() {
+        return file;
+    }
 
-            writer.write(line);
-            writer.write(System.lineSeparator());
-
+    public synchronized void log(String message) {
+        String line = "[" + FORMAT.format(LocalDateTime.now()) + "] " + message;
+        try {
+            Files.writeString(
+                    file,
+                    line + System.lineSeparator(),
+                    StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.APPEND);
         } catch (IOException e) {
-
-            e.printStackTrace();
-
+            System.err.println("Cannot write log " + file + ": " + e.getMessage());
         }
-
+        System.out.println(line);
+        if (listener != null) {
+            listener.accept(line);
+        }
     }
-
 }

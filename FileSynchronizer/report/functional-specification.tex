@@ -1,0 +1,33 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T2A]{fontenc}
+  \usepackage[utf8]{inputenc}
+\else
+  \usepackage{fontspec}
+  \setmainfont[BoldFont=DejaVuSerif-Bold.ttf,
+    ItalicFont=DejaVuSerif-Italic.ttf,
+    BoldItalicFont=DejaVuSerif-BoldItalic.ttf]{DejaVuSerif.ttf}
+  \setmonofont[BoldFont=DejaVuSansMono-Bold.ttf,
+    ItalicFont=DejaVuSansMono-Oblique.ttf,
+    BoldItalicFont=DejaVuSansMono-BoldOblique.ttf]{DejaVuSansMono.ttf}
+\fi
+\usepackage[russian]{babel}
+\usepackage[left=25mm,right=15mm,top=20mm,bottom=20mm]{geometry}
+\usepackage{indentfirst}
+\setlength{\parindent}{1.25cm}
+\setlength{\parskip}{2pt}
+\emergencystretch=2em
+\renewcommand{\thesubsection}{\arabic{subsection}}
+\begin{document}
+\begin{center}
+{\Large\bfseries Функциональная спецификация}\\[4mm]
+{\large Программа автоматической синхронизации файлов в двух каталогах на разных компьютерах}
+\end{center}
+\vspace{3mm}
+Студент: \underline{\hspace{65mm}}\hfill Группа: \underline{\hspace{25mm}}
+
+Преподаватель: \underline{\hspace{53mm}}\hfill Дата согласования: \underline{\hspace{20mm}}
+
+\input{specification-content.tex}
+\end{document}
